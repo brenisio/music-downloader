@@ -129,17 +129,16 @@ def already_downloaded(output_dir: Path, track: str, artist: str, ext: str) -> b
 def check_dependencies() -> None:
     """Verifica se yt-dlp e ffmpeg estão instalados."""
     for tool in ["yt-dlp", "ffmpeg"]:
-        try:
-            result = subprocess.run([tool, "--version"], capture_output=True, text=True)
-            ok = result.returncode == 0
-        except FileNotFoundError:
-            ok = False
-        if not ok:
+        path = shutil.which(tool)
+        if path is None:
             raise EnvironmentError(
                 f"'{tool}' não encontrado no PATH.\n"
                 f"  yt-dlp : pip install yt-dlp\n"
-                f"  ffmpeg : winget install ffmpeg  (ou https://ffmpeg.org/download.html)"
+                f"  ffmpeg (conda) : conda install -c conda-forge ffmpeg\n"
+                f"  ffmpeg (Windows) : winget install ffmpeg\n"
+                f"  ffmpeg (Ubuntu)  : sudo apt install ffmpeg"
             )
+        logging.info(f"  {tool}: {path}")
 
 # ---------------------------------------------------------------------------
 # Download
@@ -161,6 +160,7 @@ def download_track_tmp(track: str, artist: str, output_dir: Path, audio_format: 
         "--no-playlist",
         "--retries", "3",
         "--socket-timeout", "30",
+        "--extractor-args", "youtube:player_client=android",
         "--quiet",
         "--no-warnings",
         "--print", "after_move:filepath",
@@ -282,6 +282,14 @@ def main() -> None:
     audio_format: str = args.formato
 
     setup_logging()
+
+    # No Windows, conda instala ffmpeg em Library/bin que não está no PATH por padrão
+    import os
+    conda_prefix = os.environ.get("CONDA_PREFIX")
+    if conda_prefix:
+        lib_bin = Path(conda_prefix) / "Library" / "bin"
+        if lib_bin.exists() and str(lib_bin) not in os.environ["PATH"]:
+            os.environ["PATH"] = str(lib_bin) + os.pathsep + os.environ["PATH"]
 
     logging.info("=" * 60)
     logging.info("  Serato DJ Music Downloader")
