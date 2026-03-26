@@ -1,0 +1,6 @@
+.claude/
+baixador.log
+processed/
+download/
+__pycache__/
+*.pyc
