@@ -17,10 +17,27 @@ passion_fruit_drake_Bmajor_112bpm.mp3
 Baixe em [python.org](https://www.python.org/downloads/)
 
 ### 2. ffmpeg
+
+**Conda (recomendado se estiver usando Anaconda/Miniconda):**
+```bash
+conda install -c conda-forge ffmpeg
+```
+
+**Windows (sem Conda):**
 ```bash
 winget install ffmpeg
 ```
 Ou baixe manualmente em [ffmpeg.org](https://ffmpeg.org/download.html) e adicione ao PATH.
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update && sudo apt install ffmpeg
+```
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
 
 ### 3. Dependências Python
 Na pasta do projeto:

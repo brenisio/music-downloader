@@ -20,6 +20,7 @@ import subprocess
 import unicodedata
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import librosa
 import numpy as np
@@ -128,8 +129,12 @@ def already_downloaded(output_dir: Path, track: str, artist: str, ext: str) -> b
 def check_dependencies() -> None:
     """Verifica se yt-dlp e ffmpeg estão instalados."""
     for tool in ["yt-dlp", "ffmpeg"]:
-        result = subprocess.run([tool, "--version"], capture_output=True, text=True)
-        if result.returncode != 0:
+        try:
+            result = subprocess.run([tool, "--version"], capture_output=True, text=True)
+            ok = result.returncode == 0
+        except FileNotFoundError:
+            ok = False
+        if not ok:
             raise EnvironmentError(
                 f"'{tool}' não encontrado no PATH.\n"
                 f"  yt-dlp : pip install yt-dlp\n"
@@ -140,7 +145,7 @@ def check_dependencies() -> None:
 # Download
 # ---------------------------------------------------------------------------
 
-def download_track_tmp(track: str, artist: str, output_dir: Path, audio_format: str) -> Path | None:
+def download_track_tmp(track: str, artist: str, output_dir: Path, audio_format: str) -> Optional[Path]:
     """
     Baixa a música via yt-dlp para um arquivo temporário na pasta de saída.
     Retorna o Path do arquivo baixado, ou None em caso de falha.
