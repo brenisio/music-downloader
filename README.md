@@ -101,6 +101,33 @@ music-downloader/
 
 ---
 
+## Listar músicas de um diretório
+
+Depois de baixar uma playlist, você pode consultar quais músicas estão em uma pasta sem precisar abrir o explorador de arquivos — útil para copiar a lista e usar em outro lugar (ex: montar set, criar referência, importar para outro sistema).
+
+```bash
+python run_baixador.py --ler_dict -n <parte-do-nome>
+```
+
+O filtro é por **substring**, sem diferenciar maiúsculas de minúsculas. Exemplo:
+
+```bash
+python run_baixador.py --ler_dict -n The_Drake
+```
+
+Saída:
+```
+=== The_Drake_Richy_Malone/ (42 faixas) ===
+gods_plan_drake_Aminor_87bpm
+in_my_feelings_drake_Fmajor_91bpm
+passion_fruit_drake_Bmajor_112bpm
+...
+```
+
+Se o filtro bater em mais de um diretório, todos são listados. Os nomes exibidos não incluem a extensão — são exatamente como o Serato exibe as faixas.
+
+---
+
 ## Notas
 
 - **Re-execução segura**: arquivos já baixados são pulados automaticamente

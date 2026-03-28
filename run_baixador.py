@@ -268,6 +268,27 @@ def process_csv(csv_path: Path, audio_format: str) -> tuple[int, int]:
 # Main
 # ---------------------------------------------------------------------------
 
+def list_directory(name_filter: str) -> None:
+    """Lista os nomes de músicas em diretórios que contenham name_filter no nome."""
+    matches = [
+        d for d in sorted(ROOT_DIR.iterdir())
+        if d.is_dir() and name_filter.lower() in d.name.lower()
+    ]
+
+    if not matches:
+        print(f"Nenhum diretório encontrado com '{name_filter}' em '{ROOT_DIR}'.")
+        return
+
+    for directory in matches:
+        audio_files = sorted(
+            f for f in directory.iterdir()
+            if f.is_file() and f.suffix.lower() in (".mp3", ".flac")
+        )
+        print(f"\n=== {directory.name}/ ({len(audio_files)} faixas) ===")
+        for f in audio_files:
+            print(f.stem)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Baixa músicas de playlists CSV (Exportify) para uso no Serato DJ."
@@ -278,8 +299,24 @@ def main() -> None:
         default="mp3",
         help="Formato de áudio: mp3 (320kbps, padrão) ou flac (lossless)",
     )
+    parser.add_argument(
+        "--ler_dict",
+        action="store_true",
+        help="Lista os nomes das músicas em um diretório (requer -n)",
+    )
+    parser.add_argument(
+        "-n", "--nome",
+        default=None,
+        help="Filtro parcial do nome do diretório (usado com --ler_dict)",
+    )
     args = parser.parse_args()
     audio_format: str = args.formato
+
+    if args.ler_dict:
+        if not args.nome:
+            parser.error("--ler_dict requer -n <nome>")
+        list_directory(args.nome)
+        return
 
     setup_logging()
 
