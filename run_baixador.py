@@ -37,6 +37,26 @@ LOG_FILE      = ROOT_DIR / "baixador.log"
 # Nomes seguros para filesystem (sem # ou b)
 KEY_NAMES = ["C", "Csharp", "D", "Dsharp", "E", "F", "Fsharp", "G", "Gsharp", "A", "Asharp", "B"]
 
+# Camelot wheel: (key, mode) → (número, letra)
+# Compatíveis: mesmo número (A↔B = relativa), ±1 mesmo lado (quinta acima/abaixo)
+CAMELOT_MAP = {
+    ("B",      "major"): (1,  "B"), ("Fsharp", "major"): (2,  "B"),
+    ("Csharp", "major"): (3,  "B"), ("Gsharp", "major"): (4,  "B"),
+    ("Dsharp", "major"): (5,  "B"), ("Asharp", "major"): (6,  "B"),
+    ("F",      "major"): (7,  "B"), ("C",      "major"): (8,  "B"),
+    ("G",      "major"): (9,  "B"), ("D",      "major"): (10, "B"),
+    ("A",      "major"): (11, "B"), ("E",      "major"): (12, "B"),
+    ("Gsharp", "minor"): (1,  "A"), ("Dsharp", "minor"): (2,  "A"),
+    ("Asharp", "minor"): (3,  "A"), ("F",      "minor"): (4,  "A"),
+    ("C",      "minor"): (5,  "A"), ("G",      "minor"): (6,  "A"),
+    ("D",      "minor"): (7,  "A"), ("A",      "minor"): (8,  "A"),
+    ("E",      "minor"): (9,  "A"), ("B",      "minor"): (10, "A"),
+    ("Fsharp", "minor"): (11, "A"), ("Csharp", "minor"): (12, "A"),
+}
+
+# Padrão de keys ordenado do mais longo pro mais curto (evita match parcial)
+_KEY_PATTERN = "|".join(sorted(KEY_NAMES, key=len, reverse=True))
+
 # Perfis de Krumhansl-Schmuckler para detecção de tonalidade
 _MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
 _MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
@@ -268,6 +288,146 @@ def process_csv(csv_path: Path, audio_format: str) -> tuple[int, int]:
 # Main
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Shuffle / ordenamento para mixing
+# ---------------------------------------------------------------------------
+
+def _parse_audio_filename(path: Path) -> Optional[dict]:
+    """
+    Extrai key, mode, bpm e artista do nome do arquivo.
+    Suporta re-execução: ignora prefixo numérico e sufixo Camelot já existentes.
+    """
+    stem = path.stem
+    stem = re.sub(r'^\d+_', '', stem)                        # remove prefixo: "00_"
+    stem = re.sub(r'_\d{1,2}[ab]$', '', stem, flags=re.IGNORECASE)  # remove sufixo: "_8a"
+
+    m = re.match(rf'^(.+)_({_KEY_PATTERN})(major|minor)_(\d+)bpm$', stem)
+    if not m:
+        return None
+
+    prefix, key, mode, bpm_str = m.group(1), m.group(2), m.group(3), m.group(4)
+    bpm = int(bpm_str)
+    camelot_num, camelot_letter = CAMELOT_MAP.get((key, mode), (0, "?"))
+
+    # Último token do prefix = artista sanitizado (ex: "dire_straits_Fmajor" → "straits")
+    artist_hint = prefix.split('_')[-1]
+
+    return {
+        "path":           path,
+        "clean_stem":     stem,
+        "key":            key,
+        "mode":           mode,
+        "bpm":            bpm,
+        "camelot_num":    camelot_num,
+        "camelot_letter": camelot_letter,
+        "artist_hint":    artist_hint,
+    }
+
+
+def _camelot_distance(n1: int, l1: str, n2: int, l2: str) -> float:
+    """Distância harmônica no Camelot wheel. 0 = mesma tonalidade."""
+    if n1 == n2 and l1 == l2:
+        return 0.0
+    if n1 == n2:          # relativa maior/menor
+        return 0.5
+    num_dist = min(abs(n1 - n2), 12 - abs(n1 - n2))  # circular 1-12
+    letter_penalty = 0.0 if l1 == l2 else 0.5
+    return float(num_dist) + letter_penalty
+
+
+def _bpm_distance(b1: int, b2: int) -> float:
+    """Distância de BPM considerando dobro/metade (ex: 70 e 140 são compatíveis)."""
+    return float(min(abs(b1 - b2), abs(b1 - 2 * b2), abs(2 * b1 - b2)))
+
+
+def _mixing_score(t1: dict, t2: dict) -> float:
+    """Score de transição: menor = melhor. 60% harmônico, 40% BPM."""
+    camelot_d = _camelot_distance(
+        t1["camelot_num"], t1["camelot_letter"],
+        t2["camelot_num"], t2["camelot_letter"],
+    )
+    bpm_d = _bpm_distance(t1["bpm"], t2["bpm"])
+    return 0.6 * (camelot_d / 6.0) + 0.4 * (bpm_d / 100.0)
+
+
+def _sort_for_mixing(tracks: list, sem_repeticao: bool) -> list:
+    """
+    Greedy nearest-neighbor: começa pela faixa de BPM mediano,
+    a cada passo escolhe a de menor mixing_score.
+    Com sem_repeticao, evita artista igual ao anterior.
+    """
+    if not tracks:
+        return tracks
+
+    sorted_bpm = sorted(tracks, key=lambda t: t["bpm"])
+    current    = sorted_bpm[len(sorted_bpm) // 2]
+    remaining  = [t for t in tracks if t is not current]
+    result     = [current]
+
+    while remaining:
+        prev        = result[-1]
+        prev_artist = prev["artist_hint"] if sem_repeticao else None
+
+        candidates = (
+            [t for t in remaining if t["artist_hint"] != prev_artist]
+            if sem_repeticao else remaining
+        )
+        if not candidates:       # fallback: aceita mesmo artista
+            candidates = remaining
+
+        next_track = min(candidates, key=lambda t: _mixing_score(prev, t))
+        result.append(next_track)
+        remaining.remove(next_track)
+
+    return result
+
+
+def apply_shuffle(name_filter: str, sem_repeticao: bool) -> None:
+    """Ordena faixas para mixing fluido e renomeia com índice + notação Camelot."""
+    matches = [
+        d for d in sorted(ROOT_DIR.iterdir())
+        if d.is_dir() and name_filter.lower() in d.name.lower()
+    ]
+
+    if not matches:
+        print(f"Nenhum diretório encontrado com '{name_filter}'.")
+        return
+
+    for directory in matches:
+        audio_files = sorted(
+            f for f in directory.iterdir()
+            if f.is_file() and f.suffix.lower() in (".mp3", ".flac")
+        )
+
+        tracks      = [t for t in (_parse_audio_filename(f) for f in audio_files) if t]
+        unparseable = [f for f in audio_files if _parse_audio_filename(f) is None]
+
+        if not tracks:
+            print(f"{directory.name}/: nenhuma faixa com formato reconhecido.")
+            continue
+
+        ordered = _sort_for_mixing(tracks, sem_repeticao)
+
+        # Renomear em dois passos para evitar conflito de nomes
+        for i, track in enumerate(ordered):
+            camelot_str = f"{track['camelot_num']}{track['camelot_letter'].lower()}"
+            new_name    = f"{i:02d}_{track['clean_stem']}_{camelot_str}{track['path'].suffix}"
+            tmp_path    = directory / f"_shuf_tmp_{i}{track['path'].suffix}"
+            track["path"].rename(tmp_path)
+            track["tmp_path"] = tmp_path
+            track["new_name"] = new_name
+
+        print(f"\n=== {directory.name}/ — {len(ordered)} faixas ===")
+        for i, track in enumerate(ordered):
+            final_path = directory / track["new_name"]
+            Path(track["tmp_path"]).rename(final_path)
+            camelot_str = f"{track['camelot_num']}{track['camelot_letter']}"
+            print(f"  {i:02d}. {track['new_name']}  [{track['bpm']} bpm | {camelot_str}]")
+
+        if unparseable:
+            print(f"\n  [{len(unparseable)} arquivo(s) ignorado(s) — sem key/bpm no nome]")
+
+
 def list_directory(name_filter: str) -> None:
     """Lista os nomes de músicas em diretórios que contenham name_filter no nome."""
     matches = [
@@ -305,9 +465,19 @@ def main() -> None:
         help="Lista os nomes das músicas em um diretório (requer -n)",
     )
     parser.add_argument(
+        "--shuffle",
+        action="store_true",
+        help="Ordena faixas para mixing fluido por BPM e tonalidade (requer -n)",
+    )
+    parser.add_argument(
+        "--sem_repeticao",
+        action="store_true",
+        help="Evita artista repetido consecutivamente (usado com --shuffle)",
+    )
+    parser.add_argument(
         "-n", "--nome",
         default=None,
-        help="Filtro parcial do nome do diretório (usado com --ler_dict)",
+        help="Filtro parcial do nome do diretório (usado com --ler_dict e --shuffle)",
     )
     args = parser.parse_args()
     audio_format: str = args.formato
@@ -316,6 +486,12 @@ def main() -> None:
         if not args.nome:
             parser.error("--ler_dict requer -n <nome>")
         list_directory(args.nome)
+        return
+
+    if args.shuffle:
+        if not args.nome:
+            parser.error("--shuffle requer -n <nome>")
+        apply_shuffle(args.nome, args.sem_repeticao)
         return
 
     setup_logging()
