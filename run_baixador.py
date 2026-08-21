@@ -150,16 +150,6 @@ def analyze_audio(file_path: Path, tempo_ref: Optional[float] = None) -> tuple[s
 # Helpers de nome de arquivo
 # ---------------------------------------------------------------------------
 
-def sanitize_filename(text: str) -> str:
-    """Converte texto para formato seguro para filesystem."""
-    normalized = unicodedata.normalize("NFD", text)
-    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
-    cleaned = re.sub(r"[^\w\s-]", "", ascii_text)
-    cleaned = re.sub(r"[\s\-]+", "_", cleaned)
-    cleaned = re.sub(r"_+", "_", cleaned)
-    return cleaned.strip("_").lower()[:60]
-
-
 def get_primary_artist(artist_field: str) -> str:
     """Retorna o primeiro artista (split em ';')."""
     return artist_field.split(";")[0].strip()
