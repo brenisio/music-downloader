@@ -2,12 +2,17 @@
 
 Baixa músicas de playlists do Spotify em alta qualidade, prontas para uso no **Serato DJ**.
 
-Cada arquivo é salvo com tonalidade e BPM **detectados do áudio real** (via librosa):
+Cada arquivo é salvo na **ordem da playlist**, com o BPM **detectado do áudio real**
+(via librosa, não copiado do metadado do Spotify):
 
 ```
-sultans_of_swing_dire_straits_Fmajor_148bpm.mp3
-passion_fruit_drake_Bmajor_112bpm.mp3
+01_129bpm_StereoLove_EdwardMaya.m4a
+02_089bpm_NemDeGraca_Pixote.m4a
+03_148bpm_SultansOfSwing_DireStraits.m4a
 ```
+
+O índice preserva a ordem do CSV; o BPM vai com zero à esquerda pra ordenação por
+BPM também sair certa. A tonalidade fica registrada no log, não no nome.
 
 ---
 
@@ -68,15 +73,22 @@ Você pode colocar vários CSVs de uma vez.
 
 ### Passo 3 — Rode o script
 
-**MP3 320kbps** (padrão, recomendado para a maioria dos setups):
+**M4A** (padrão, melhor qualidade possível):
 ```bash
 python run_baixador.py
 ```
 
-**FLAC lossless** (qualidade máxima):
+Baixa o AAC nativo do YouTube (~130kbps, itag 140) **sem re-encode** — o arquivo
+que chega no Serato é bit a bit o que o YouTube serve. É o teto real: o YouTube
+não distribui lossless, então FLAC aqui só inflaria o arquivo sem recuperar um bit.
+
+**MP3 320kbps** (se algum equipamento não ler m4a):
 ```bash
-python run_baixador.py --formato flac
+python run_baixador.py --formato mp3
 ```
+
+Passa o áudio por um re-encode (2ª geração lossy). Soa igual ou pior que o m4a,
+nunca melhor — use só por compatibilidade.
 
 ---
 
@@ -92,8 +104,8 @@ As músicas ficam em pastas com o nome da playlist:
 ```
 music-downloader/
 ├── MinhaPlaylist/
-│   ├── sultans_of_swing_dire_straits_Fmajor_148bpm.mp3
-│   ├── have_a_cigar_pink_floyd_Eminor_120bpm.mp3
+│   ├── 01_148bpm_SultansOfSwing_DireStraits.m4a
+│   ├── 02_120bpm_HaveACigar_PinkFloyd.m4a
 │   └── ...
 └── processed/
     └── MinhaPlaylist.csv
@@ -118,9 +130,9 @@ python run_baixador.py --ler_dict -n The_Drake
 Saída:
 ```
 === The_Drake_Richy_Malone/ (42 faixas) ===
-gods_plan_drake_Aminor_87bpm
-in_my_feelings_drake_Fmajor_91bpm
-passion_fruit_drake_Bmajor_112bpm
+01_087bpm_GodsPlan_Drake
+02_091bpm_InMyFeelings_Drake
+03_112bpm_PassionFruit_Drake
 ...
 ```
 
@@ -129,6 +141,12 @@ Se o filtro bater em mais de um diretório, todos são listados. Os nomes exibid
 ---
 
 ## Ordenar faixas para mixing (shuffle inteligente)
+
+> **Atenção:** o `--shuffle` lê a tonalidade **do nome do arquivo**, e o formato
+> atual (`01_129bpm_Nome_Artista`) não guarda tonalidade — o nome preserva a ordem
+> da playlist, que é o oposto do que o shuffle faz. Ele continua funcionando nas
+> pastas antigas (`nome_artista_Fmajor_148bpm`); em pastas novas ele avisa
+> "nenhuma faixa com formato reconhecido" e não mexe em nada.
 
 ### Por que isso existe
 
@@ -186,3 +204,10 @@ O comando é **idempotente**: rodar novamente reconhece os prefixos e sufixos j�
 - **Log completo**: tudo é registrado em `baixador.log`
 - A análise usa os primeiros 60 segundos do áudio para agilizar
 - Músicas não encontradas no YouTube são puladas e registradas no log
+- **Escolha da versão**: a busca traz 5 candidatos e escolhe pela **duração do
+  Spotify**, desempatando por canal (`- Topic` > oficial/VEVO > terceiros). Pegar
+  o primeiro resultado cegamente traz live, slowed e nightcore no lugar da faixa.
+- **Relatório de conferência**: no fim de cada CSV, as faixas cuja duração não
+  bateu com o Spotify são listadas juntas. Confira essas antes de tocar — é onde
+  mora o risco de ter baixado outra música com nome parecido.
+- **Se der HTTP 403**: seu `yt-dlp` está velho. `pip install -U yt-dlp` resolve.

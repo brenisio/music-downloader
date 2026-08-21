@@ -1,6 +1,27 @@
 .claude/
-baixador.log
-processed/
-download/
 __pycache__/
 *.pyc
+
+# Entradas e saídas do fluxo de download
+download/
+processed/
+
+# Logs — um por CSV quando roda em paralelo
+baixador*.log
+
+# CREDENCIAIS: cookies de sessão do YouTube/Google. NUNCA commitar.
+cookies.txt
+
+# Áudio e vídeo baixados: as pastas de playlist têm nome arbitrário
+# (o nome do CSV), então ignoramos pela extensão em vez de por pasta.
+*.m4a
+*.mp3
+*.flac
+*.wav
+*.aiff
+*.opus
+*.mp4
+*.webm
+
+# Lixo do Git Bash no Windows
+*.stackdump
